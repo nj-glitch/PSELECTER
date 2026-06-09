@@ -622,21 +622,46 @@ def main():
 
         # 初回(データが空)のときは読み込みを促す
         if not data["opponents_master"] and not any(p["name"] for p in data["my_team"]):
-            st.info("👋 はじめに、お手持ちの **team_data.json** を下の"
-                    "「JSONファイルを選択」から読み込んでください。")
+            st.info("👋 はじめに、お手持ちの **team_data.json** の中身を下の"
+                    "「JSONを貼り付け」に貼り付けて読み込んでください。")
 
-        # ① JSON 読み込み(インポート)
-        up = st.file_uploader("JSONファイルを選択", type=["json"], key="json_uploader")
-        if up is not None:
-            if st.button("📥 このJSONを読み込む", use_container_width=True):
+        # ① JSON 読み込み(貼り付け方式 — stliteで確実に動く)
+        st.markdown("**📥 JSONを貼り付けて読み込む**")
+        st.caption("team_data.json をテキストエディタで開き、全選択→コピーして下へ貼り付け。")
+        paste = st.text_area(
+            "JSONを貼り付け",
+            height=120,
+            placeholder='{\n  "opponents_master": [...],\n  "my_team": [...],\n  ...\n}',
+            label_visibility="collapsed",
+            key="json_paste",
+        )
+        if st.button("📥 貼り付けたJSONを読み込む", use_container_width=True):
+            if not paste.strip():
+                st.warning("JSONを貼り付けてください。")
+            else:
                 try:
-                    loaded = normalize_data(json.load(up))
+                    loaded = normalize_data(json.loads(paste))
                     save_data(loaded)
                     clear_team_widget_state()
+                    st.session_state.pop("json_paste", None)
                     st.success("読み込みました！")
                     st.rerun()
                 except Exception as e:
-                    st.error(f"読み込み失敗: {e}")
+                    st.error(f"読み込み失敗（JSONの形式を確認してください）: {e}")
+
+        # ② JSONファイル選択(PCのブラウザ用。iPad/stliteでは403になることがあるため補助)
+        with st.expander("📁 ファイルから読み込む（PCのブラウザ向け）"):
+            up = st.file_uploader("JSONファイルを選択", type=["json"], key="json_uploader")
+            if up is not None:
+                if st.button("📥 このファイルを読み込む", use_container_width=True):
+                    try:
+                        loaded = normalize_data(json.load(up))
+                        save_data(loaded)
+                        clear_team_widget_state()
+                        st.success("読み込みました！")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"読み込み失敗: {e}")
 
         # JSON 書き出し(エクスポート)
         st.download_button(
