@@ -182,10 +182,18 @@ def save_data(data):
 
 
 def clear_team_widget_state():
-    """チーム登録フォームのウィジェット状態を消す(読み込み/リセット時に反映させるため)。"""
-    for i in range(TEAM_SIZE):
-        for prefix in ("name_", "role_", "prio_", "fix_", "tgt_", "loss_", "memo_"):
-            st.session_state.pop(prefix + str(i), None)
+    """チーム登録フォームを作り直して、読み込んだ/リセットしたデータを確実に反映させる。
+
+    Streamlitはウィジェットにkeyを付けると過去の入力値(session_state)が優先され、
+    後から value= を変えても表示が更新されない。そこでウィジェットのkeyに付ける
+    バージョン番号(team_nonce)を増やし、別物のウィジェットとして作り直させる。
+    """
+    st.session_state["team_nonce"] = st.session_state.get("team_nonce", 0) + 1
+    # 古いkeyの残骸も掃除(任意)
+    for k in list(st.session_state.keys()):
+        if any(str(k).startswith(p) for p in
+               ("name_", "role_", "prio_", "fix_", "tgt_", "loss_", "memo_")):
+            st.session_state.pop(k, None)
 
 
 # ───────────────────────── 選出アルゴリズム ─────────────────────────
@@ -643,7 +651,6 @@ def main():
                     loaded = normalize_data(json.loads(paste))
                     save_data(loaded)
                     clear_team_widget_state()
-                    st.session_state.pop("json_paste", None)
                     st.success("読み込みました！")
                     st.rerun()
                 except Exception as e:
@@ -694,6 +701,9 @@ def main():
         st.caption("自分の6体を登録します。**優先度**が高いほど選出されやすく、"
                    "**確定選出**は必ず3体に含めます。**刺さる相手**には、その個体が有利を取れる相手を選びます。")
 
+        # 読み込み/リセットのたびに増えるバージョン番号。これをkeyに付けることで
+        # フォームを"別物"として作り直し、最新データを確実に表示させる。
+        nonce = st.session_state.get("team_nonce", 0)
         with st.form("team_form"):
             cols = st.columns(2)
             new_team = []
@@ -702,24 +712,24 @@ def main():
                 with cols[i % 2]:
                     st.markdown(f"<div class='poke-card'>", unsafe_allow_html=True)
                     st.markdown(f"**#{i+1}**")
-                    name = st.text_input("名前", value=p["name"], key=f"name_{i}",
+                    name = st.text_input("名前", value=p["name"], key=f"name_{i}_{nonce}",
                                          placeholder="例: カイリュー")
                     c1, c2 = st.columns(2)
                     role = c1.selectbox("役割", ROLES,
                                         index=ROLES.index(p["role"]) if p["role"] in ROLES else len(ROLES)-1,
-                                        key=f"role_{i}")
+                                        key=f"role_{i}_{nonce}")
                     priority = c2.number_input("優先度(高=優先)", min_value=0, max_value=100,
-                                               value=int(p["priority"]), step=5, key=f"prio_{i}")
-                    fixed = st.checkbox("⭐ 確定選出(必ず入れる)", value=p["fixed"], key=f"fix_{i}")
+                                               value=int(p["priority"]), step=5, key=f"prio_{i}_{nonce}")
+                    fixed = st.checkbox("⭐ 確定選出(必ず入れる)", value=p["fixed"], key=f"fix_{i}_{nonce}")
                     valid_targets = [t for t in p["targets"] if t in master]
                     targets = st.multiselect("⭕ 刺さる相手(この子を出したい相手)",
                                              options=master, default=valid_targets,
-                                             key=f"tgt_{i}")
+                                             key=f"tgt_{i}_{nonce}")
                     valid_losses = [t for t in p.get("losses", []) if t in master]
                     losses = st.multiselect("❌ 絶対に勝てない相手(不利・出すと危険)",
                                             options=master, default=valid_losses,
-                                            key=f"loss_{i}")
-                    memo = st.text_input("メモ(任意)", value=p["memo"], key=f"memo_{i}",
+                                            key=f"loss_{i}_{nonce}")
+                    memo = st.text_input("メモ(任意)", value=p["memo"], key=f"memo_{i}_{nonce}",
                                          placeholder="立ち回り・技構成など")
                     st.markdown("</div>", unsafe_allow_html=True)
                     new_team.append({"name": name.strip(), "role": role,
