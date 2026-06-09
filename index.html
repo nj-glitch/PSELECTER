@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+  <title>ポケモン選出補助</title>
+
+  <!-- ── PWA (iPad ホーム画面アプリ化) ── -->
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="選出補助" />
+  <meta name="theme-color" content="#1a1340" />
+  <link rel="manifest" href="./manifest.json" />
+  <link rel="apple-touch-icon" href="./icon-192.png" />
+  <!-- favicon: ⚡絵文字をインラインSVGで(favicon.ico の404防止) -->
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%E2%9A%A1%3C/text%3E%3C/svg%3E" />
+
+  <!-- ── stlite (ブラウザ内で Streamlit を実行) ── -->
+  <link rel="stylesheet"
+        href="https://cdn.jsdelivr.net/npm/@stlite/browser@1.8.0/build/stlite.css" />
+
+  <style>
+    html, body {
+      margin: 0; padding: 0;
+      background: #0f1226;
+      height: 100%;
+      overscroll-behavior: none;
+      -webkit-text-size-adjust: 100%;
+    }
+    #root { height: 100%; }
+
+    /* 初期ロード画面(Pyodide ダウンロード中に表示) */
+    #boot {
+      position: fixed; inset: 0; z-index: 9999;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      background: linear-gradient(135deg, #0f1226, #1a1340);
+      color: #cdd3f0; font-family: -apple-system, "Hiragino Sans", sans-serif;
+      transition: opacity .4s ease;
+    }
+    #boot.hide { opacity: 0; pointer-events: none; }
+    #boot .bolt { font-size: 56px; animation: pulse 1.4s ease-in-out infinite; }
+    #boot .title {
+      font-size: 22px; font-weight: 900; margin-top: 8px;
+      background: linear-gradient(90deg, #60a5fa, #c084fc);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }
+    #boot .sub { font-size: 13px; color: #7a86b0; margin-top: 14px; text-align: center; line-height: 1.7; }
+    #boot .spinner {
+      margin-top: 22px; width: 34px; height: 34px;
+      border: 3px solid rgba(120,140,255,0.25);
+      border-top-color: #60a5fa; border-radius: 50%;
+      animation: spin .8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes pulse { 0%,100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.12); opacity: .7; } }
+  </style>
+</head>
+<body>
+  <!-- 起動中スプラッシュ -->
+  <div id="boot">
+    <div class="bolt">⚡</div>
+    <div class="title">ポケモン選出補助</div>
+    <div class="spinner"></div>
+    <div class="sub">
+      初回はデータの読み込みに<br>
+      少し時間がかかります（10〜30秒）…
+    </div>
+  </div>
+
+  <div id="root"></div>
+
+  <!-- 起動エラーを画面に表示するパネル(デバッグ用) -->
+  <div id="errpanel" style="display:none;position:fixed;left:0;right:0;bottom:0;z-index:10000;
+       max-height:50vh;overflow:auto;background:#2a0e12;color:#ffd7d7;
+       font:12px/1.5 ui-monospace,Menlo,monospace;padding:12px 16px;
+       border-top:2px solid #f87171;white-space:pre-wrap;"></div>
+
+  <script>
+    // どんなエラーも画面下部に表示する
+    (function () {
+      const panel = document.getElementById("errpanel");
+      function show(label, detail) {
+        panel.style.display = "block";
+        panel.textContent += "● " + label + "\n" + detail + "\n\n";
+      }
+      window.addEventListener("error", (e) => {
+        show("error", (e.message || "") + "\n" + (e.error && e.error.stack || ""));
+      });
+      window.addEventListener("unhandledrejection", (e) => {
+        const r = e.reason;
+        show("unhandledrejection",
+          (r && (r.stack || r.message)) || JSON.stringify(r) || String(r));
+      });
+      const origErr = console.error.bind(console);
+      console.error = function (...a) {
+        try {
+          show("console.error", a.map(x =>
+            (x && (x.stack || x.message)) || (typeof x === "object" ? JSON.stringify(x) : String(x))
+          ).join(" "));
+        } catch (_) {}
+        origErr(...a);
+      };
+    })();
+  </script>
+
+  <script type="module">
+    import { mount } from "https://cdn.jsdelivr.net/npm/@stlite/browser@1.8.0/build/stlite.js";
+
+    // app.py と初期データ(seed_data.json)を取得して mount
+    // （IndexedDB 永続化ディレクトリ /mnt を割り当て）
+    const appCode = await (await fetch("./app.py")).text();
+
+    // seed_data.json は任意（無くても起動する）
+    let seedCode = null;
+    try {
+      const r = await fetch("./seed_data.json");
+      if (r.ok) seedCode = await r.text();
+    } catch (e) { /* シードなしでも続行 */ }
+
+    const files = { "app.py": appCode };
+    if (seedCode != null) files["seed_data.json"] = seedCode;
+
+    const controller = mount(
+      {
+        entrypoint: "app.py",
+        files: files,
+        idbfsMountpoints: ["/mnt"],
+        streamlitConfig: {
+          // 外部への利用統計送信を無効化（プライバシー）
+          "browser.gatherUsageStats": false,
+        },
+      },
+      document.getElementById("root"),
+    );
+
+    // Streamlit の描画が始まったらスプラッシュを消す
+    const boot = document.getElementById("boot");
+    const observer = new MutationObserver(() => {
+      const app = document.querySelector('[data-testid="stAppViewContainer"], .stApp');
+      if (app) {
+        boot.classList.add("hide");
+        setTimeout(() => boot.remove(), 500);
+        observer.disconnect();
+      }
+    });
+    observer.observe(document.getElementById("root"), { childList: true, subtree: true });
+    // 保険: 60秒で強制的に消す
+    setTimeout(() => { boot.classList.add("hide"); }, 60000);
+  </script>
+</body>
+</html>

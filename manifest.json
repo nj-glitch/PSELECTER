@@ -1,0 +1,26 @@
+{
+  "name": "ポケモン選出補助ツール",
+  "short_name": "選出補助",
+  "description": "ポケモンシングルバトル 6→3 選出補助ツール",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0f1226",
+  "theme_color": "#1a1340",
+  "orientation": "any",
+  "lang": "ja",
+  "icons": [
+    {
+      "src": "./icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
